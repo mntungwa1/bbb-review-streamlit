@@ -39,6 +39,15 @@ def show_error(exc):
 def client():
     return st.session_state['portal_client']
 
+def select_review_document(doc, open_form=False):
+    st.session_state['selected_review_document'] = doc
+    st.session_state['review_document'] = doc
+    if open_form:
+        st.session_state['workspace_page'] = 'Submit a review'
+
+def remember_tool():
+    select_review_document(st.session_state['tool_to_review'])
+
 def login():
     st.markdown('<div class="bbb-hero"><div class="bbb-eyebrow">BUILD BACK BETTER · TECHNICAL REVIEW</div><h1>Stronger foundations.<br><em>Better recovery.</em></h1><p>One framework. Twenty-one tools. Three pilot studies.</p></div>', unsafe_allow_html=True)
     _, middle, _ = st.columns([1, 2, 1])
@@ -68,6 +77,11 @@ def login():
 if 'role' not in st.session_state:
     login()
     st.stop()
+
+# Preserve the document when its form widget is hidden on another page.
+if 'review_document' in st.session_state:
+    st.session_state['review_document'] = st.session_state['review_document']
+    st.session_state['selected_review_document'] = st.session_state['review_document']
 
 with st.sidebar:
     st.markdown('### BUILD BACK BETTER')
@@ -125,10 +139,18 @@ elif page == '21 Tools':
     st.title('All 21 compliance tools')
     st.write('The tools are contained in the consolidated compliance annexures. Locate each BBB reference in that source document.')
     st.link_button('Open consolidated annexures', DOCS['annexureUrl'], type='primary')
+    selected = st.session_state.get('selected_review_document')
+    st.selectbox('Tool to review', list(TOOLS),
+                 index=list(TOOLS).index(selected) if selected in TOOLS else 0,
+                 format_func=lambda d: f'{d} · {title(d)}', key='tool_to_review', on_change=remember_tool)
+    select_review_document(st.session_state['tool_to_review'])
+    st.button('Review selected tool', on_click=select_review_document,
+              args=(st.session_state['tool_to_review'], True), type='primary')
     for doc, name in TOOLS.items():
         with st.expander(f'{doc} · {name}'):
             st.link_button(f'Open annexures for {doc}', DOCS['annexureUrl'], key='open_' + doc)
-            st.caption('Select this reference in Submit a review or Review batch.')
+            st.button(f'Review {doc}', key='review_' + doc,
+                      on_click=select_review_document, args=(doc, True))
 
 elif page in PILOTS:
     st.title(title(page))
@@ -139,17 +161,23 @@ elif page in PILOTS:
 elif page == 'Submit a review':
     st.title('Submit a technical review')
     st.write('Submit one comment immediately. To collect comments across documents, choose Review batch instead.')
+    if 'review_document' not in st.session_state:
+        selected = st.session_state.get('selected_review_document', DOCUMENT_IDS[0])
+        st.session_state['review_document'] = selected if selected in DOCUMENT_IDS else DOCUMENT_IDS[0]
+    document = st.selectbox('Document', DOCUMENT_IDS,
+                            format_func=lambda d: f'{d} · {title(d)}', key='review_document')
+    st.session_state['selected_review_document'] = document
     with st.form('single_review', clear_on_submit=True):
         a, b = st.columns(2)
         reviewer = a.text_input('Full name', max_chars=200)
         email = b.text_input('Email', value=st.session_state.get('reviewer_email', ''), max_chars=254)
         organization = st.text_input('Organisation', max_chars=300)
-        document = st.selectbox('Document', DOCUMENT_IDS, format_func=lambda d: f'{d} · {title(d)}')
         location = st.text_input('Document version, page / clause / section', max_chars=500)
         comment = st.text_area('Review comment', max_chars=10000)
         recommendation = st.text_area('Recommended change / proposed wording', max_chars=10000)
         send = st.form_submit_button('Submit review', type='primary')
     if send:
+        st.session_state['selected_review_document'] = document
         try:
             client().call('POST', '/api/reviews', dict(reviewer=reviewer, email=email.strip(), organization=organization, document=document, location=location, comment=comment, recommendation=recommendation))
             st.success('Your review was submitted successfully.')
