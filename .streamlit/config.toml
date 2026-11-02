@@ -1,0 +1,11 @@
+[theme]
+primaryColor = "#9d7841"
+backgroundColor = "#f5f7f4"
+secondaryBackgroundColor = "#e8eeea"
+textColor = "#173d3c"
+font = "sans serif"
+[client]
+showErrorDetails = "none"
+toolbarMode = "minimal"
+[server]
+enableXsrfProtection = true
