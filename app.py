@@ -1,5 +1,6 @@
 """BBB Review Portal: Streamlit interface sharing the existing authenticated service."""
 import json
+import re
 import streamlit as st
 from portal_client import PortalClient, PortalError, DEFAULT_URL, empty_batch, new_entry, has_content, submission_issues, review_csv
 
@@ -59,6 +60,33 @@ def open_admin_page(page):
     st.session_state['admin_page'] = page
     st.session_state['workspace_page'] = None
 
+def request_reviewer_access():
+    with st.expander('New reviewer? Request access'):
+        st.write('Use your email address and choose a password of 12–20 characters.')
+        with st.form('request_reviewer_access', clear_on_submit=True):
+            email = st.text_input('Email address', max_chars=254)
+            password = st.text_input('New password', type='password', max_chars=20)
+            submit = st.form_submit_button('Request access', type='primary', use_container_width=True)
+        if submit:
+            st.session_state.pop('reviewer_request_reference', None)
+            email = email.strip().lower()
+            if not re.fullmatch(r'\S+@\S+\.\S+', email) or not 12 <= len(password) <= 20:
+                st.error('Enter a valid email address and a password of 12–20 characters.')
+            else:
+                portal = PortalClient(setting('PORTAL_API_URL', DEFAULT_URL), setting('PORTAL_API_TOKEN'))
+                try:
+                    result = portal.call('POST', '/api/reviewers', dict(action='request', email=email, password=password))
+                    st.session_state['reviewer_request_reference'] = result['reference']
+                except PortalError as exc:
+                    st.error(str(exc))
+                finally:
+                    portal.session.close()
+        reference = st.session_state.get('reviewer_request_reference')
+        if reference:
+            st.success('Send this reference from your email address to the administrator. If you already submitted a request, use your original reference. Once approved, sign in with the email and password you chose.')
+            st.code(reference, language=None)
+
+
 def login():
     st.markdown('<div class="bbb-hero"><div class="bbb-eyebrow">BUILD BACK BETTER · TECHNICAL REVIEW</div><h1>Stronger foundations.<br><em>Better recovery.</em></h1><p>One framework. Twenty-one tools. Three pilot studies.</p></div>', unsafe_allow_html=True)
     _, middle, _ = st.columns([1, 2, 1])
@@ -83,7 +111,8 @@ def login():
             except PortalError as exc:
                 portal.session.close()
                 show_error(exc)
-        st.caption('Use the same reviewer account as the existing BBB portal. Administrators can manage accounts after signing in.')
+        if role_label == 'Reviewer / user':
+            request_reviewer_access()
 
 if 'role' not in st.session_state:
     login()
@@ -345,7 +374,36 @@ elif page == 'Administration':
 elif page == 'Reviewer access':
     st.title('Manage reviewer accounts')
     st.write('Create individual accounts, reset passwords and enable or disable reviewer access. Account changes apply to both versions of the portal.')
-    with st.expander('Add a reviewer', expanded=True):
+    try:
+        accounts = client().call('GET', '/api/reviewers')
+    except PortalError as exc:
+        show_error(exc)
+        st.stop()
+    pending_requests = {account['id']: account['email'] for account in accounts if account.get('pending')}
+    reviewers = [account for account in accounts if not account.get('pending')]
+
+    st.subheader('Pending access requests')
+    message = st.session_state.pop('reviewer_access_message', None)
+    if message:
+        st.success(message)
+    if pending_requests:
+        st.write('Ask the reviewer to send the reference from their email address before granting access.')
+        with st.form('approve_reviewer', clear_on_submit=True):
+            request_id = st.selectbox('Pending reviewer email', list(pending_requests), format_func=pending_requests.get)
+            reference = st.text_input('Request reference', max_chars=16)
+            approve = st.form_submit_button('Grant access', type='primary')
+        if approve:
+            try:
+                client().call('POST', '/api/reviewers', dict(action='approve', id=request_id, reference=reference.strip().upper()))
+            except PortalError as exc:
+                show_error(exc)
+            else:
+                st.session_state['reviewer_access_message'] = 'Reviewer approved. They can now sign in with the password they chose.'
+                st.rerun()
+    else:
+        st.info('No pending access requests.')
+
+    with st.expander('Add a reviewer'):
         with st.form('create_reviewer', clear_on_submit=True):
             name = st.text_input('Reviewer name', max_chars=200)
             email = st.text_input('Reviewer email', max_chars=254)
@@ -354,14 +412,11 @@ elif page == 'Reviewer access':
         if create:
             try:
                 client().call('POST', '/api/reviewers', dict(action='create', name=name, email=email.strip().lower(), password=password))
-                st.success('Reviewer created. Share the sign-in details directly with the reviewer; no email was sent.')
             except PortalError as exc:
                 show_error(exc)
-    try:
-        reviewers = client().call('GET', '/api/reviewers')
-    except PortalError as exc:
-        show_error(exc)
-        st.stop()
+            else:
+                st.session_state['reviewer_access_message'] = 'Reviewer created. Share the sign-in details directly with the reviewer.'
+                st.rerun()
     if reviewers:
         reviewer = st.selectbox('Reviewer account', reviewers, format_func=lambda r: r['name'] + ' · ' + r['email'] + (' · active' if r['enabled'] else ' · disabled'))
         with st.form('reset_reviewer', clear_on_submit=True):
