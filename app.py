@@ -23,6 +23,9 @@ except (ValueError, KeyError, TypeError):
 st.markdown('''<style>
 .stApp{background:#f5f7f4}h1,h2,h3{color:#173d3c}h1,h2{font-family:Georgia,serif!important}
 [data-testid="stSidebar"]{background:#e8eeea}.bbb-hero{background:#173d3c;color:white;padding:32px 38px;border-radius:10px;margin:0 0 26px}.bbb-hero h1{color:white!important;font-size:44px;margin:10px 0}.bbb-hero em{color:#d9c192}.bbb-hero p{color:#d0dfd6}.bbb-eyebrow{color:#d7b77e;font-size:11px;font-weight:700;letter-spacing:.18em}button[kind="primary"]{background:#9d7841!important;border-color:#9d7841!important}
+.st-key-admin_navigation button[kind="primary"]{background:#173d3c!important;border-color:#173d3c!important;color:white!important}
+.st-key-admin_navigation button[kind="primary"]:hover{background:#245553!important;border-color:#245553!important}
+.st-key-admin_navigation button:focus-visible{outline:2px solid #173d3c;outline-offset:3px}
 </style>''', unsafe_allow_html=True)
 
 def title(doc):
@@ -33,8 +36,12 @@ def source_url(doc):
 
 def show_error(exc):
     st.error(str(exc))
-    if isinstance(exc, PortalError) and exc.status == 401:
-        st.info('Your session may have expired. Save a local draft backup below before signing in again.')
+    if not isinstance(exc, PortalError):
+        return
+    if exc.status == 401:
+        st.info('Your session may have expired. Save any available draft backup before signing in again.')
+    elif exc.status == 403 and st.session_state.get('role') == 'admin':
+        st.info('The portal service denied this action. Check the administrator permissions in the portal service.')
 
 def client():
     return st.session_state['portal_client']
@@ -47,6 +54,10 @@ def select_review_document(doc, open_form=False):
 
 def remember_tool():
     select_review_document(st.session_state['tool_to_review'])
+
+def open_admin_page(page):
+    st.session_state['admin_page'] = page
+    st.session_state['workspace_page'] = None
 
 def login():
     st.markdown('<div class="bbb-hero"><div class="bbb-eyebrow">BUILD BACK BETTER · TECHNICAL REVIEW</div><h1>Stronger foundations.<br><em>Better recovery.</em></h1><p>One framework. Twenty-one tools. Three pilot studies.</p></div>', unsafe_allow_html=True)
@@ -88,9 +99,16 @@ with st.sidebar:
     st.caption('Technical review workspace')
     st.caption('Signed in as ' + ('Administrator' if st.session_state['role'] == 'admin' else st.session_state.get('reviewer_email', 'Reviewer')))
     pages = ['Overview', 'Main Framework', '21 Tools', *PILOTS, 'Submit a review', 'Review batch']
-    if st.session_state['role'] == 'admin':
-        pages += ['Administration', 'Reviewer access']
+    is_admin = st.session_state['role'] == 'admin'
     page = st.radio('Workspace', pages, key='workspace_page')
+    if is_admin:
+        page = page or st.session_state.get('admin_page', 'Overview')
+        with st.container(key='admin_navigation'):
+            st.markdown('**Administrator controls**')
+            st.button('Administration', type='primary', use_container_width=True,
+                      on_click=open_admin_page, args=('Administration',))
+            st.button('Reviewer access', type='primary', use_container_width=True,
+                      on_click=open_admin_page, args=('Reviewer access',))
     if st.button('Sign out', use_container_width=True):
         if st.session_state.get('batch_dirty'):
             st.warning('Your latest draft has not been saved. Return to Review batch to save it or download a backup before signing out.')
@@ -102,8 +120,9 @@ with st.sidebar:
             st.session_state.clear()
             st.rerun()
 
-# Check the account on each workspace navigation; the service also checks every read/write.
-if st.session_state.get('verified_page') != page:
+# Administrator pages use their own authenticated endpoints.
+admin_page = is_admin and page in ('Administration', 'Reviewer access')
+if not admin_page and st.session_state.get('verified_page') != page:
     try:
         restored = client().call('GET', '/api/review-batch')
         if 'batch' not in st.session_state:
