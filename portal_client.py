@@ -7,7 +7,7 @@ import requests
 DEFAULT_URL = 'https://bbb-review-portal-2026.dingaan-mahl-3739.chatgpt.site'
 
 ALLOWED_PATHS = frozenset({
-    '/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch', '/api/tool-annexures',
+    '/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch', '/api/tool-annexures', '/api/main-framework',
 })
 
 
