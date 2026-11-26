@@ -1,4 +1,5 @@
 """BBB Review Portal: Streamlit interface sharing the existing authenticated service."""
+import base64
 import json
 import re
 import streamlit as st
@@ -33,7 +34,7 @@ def title(doc):
     return TOOLS.get(doc, PILOTS.get(doc, {}).get('title', 'BBB Engineering Framework' if doc == 'Main Framework' else doc))
 
 def source_url(doc):
-    return PILOTS[doc]['url'] if doc in PILOTS else DOCS['frameworkUrl'] if doc == 'Main Framework' else DOCS['annexureUrl']
+    return PILOTS[doc]['url'] if doc in PILOTS else DOCS['frameworkUrl']
 
 def show_error(exc):
     st.error(str(exc))
@@ -46,6 +47,31 @@ def show_error(exc):
 
 def client():
     return st.session_state['portal_client']
+
+def download_tool_annexures():
+    try:
+        annexures = client().call('GET', '/api/tool-annexures')
+        if not annexures['accepted']:
+            with st.form('tool_annexures_declaration'):
+                accepted = st.checkbox(annexures['declaration'])
+                submitted = st.form_submit_button('Accept declaration', type='primary')
+            if submitted:
+                if not accepted:
+                    st.error('Tick the box to confirm the review-only declaration.')
+                else:
+                    client().call('POST', '/api/tool-annexures', dict(accepted=True, version=annexures['version']))
+                    st.rerun()
+            return
+        content = base64.b64decode(annexures['content'], validate=True)
+    except PortalError as exc:
+        show_error(exc)
+        return
+    except (KeyError, TypeError, ValueError):
+        st.error('The tool annexures could not be loaded. Please try refreshing the page.')
+        return
+    st.download_button('Download all 21 tools', content, annexures['filename'], annexures['mime'],
+                       on_click='ignore', type='primary')
+
 
 def select_review_document(doc, open_form=False):
     st.session_state['selected_review_document'] = doc
@@ -185,8 +211,8 @@ elif page == 'Main Framework':
 
 elif page == '21 Tools':
     st.title('All 21 compliance tools')
-    st.write('Open the annexures once for all 21 tools. Keep the document open while you switch between BBB references in this tab.')
-    st.link_button('Open all 21 tools in Google Drive', DOCS['annexureUrl'], type='primary')
+    st.write('Download the consolidated annexures once. Use the BBB reference below to find each tool in the document.')
+    download_tool_annexures()
     selected = st.session_state.get('selected_review_document')
     st.selectbox('Tool to review', list(TOOLS),
                  index=list(TOOLS).index(selected) if selected in TOOLS else 0,
@@ -298,8 +324,8 @@ elif page == 'Review batch':
         doc = payload['documents'][doc_index]
         st.subheader(title(doc_id))
         if doc_id in TOOLS:
-            st.link_button('Open all 21 tools in Google Drive', source_url(doc_id), type='primary')
-            st.caption('If the annexures are already open, use that tab to find ' + doc_id + '.')
+            download_tool_annexures()
+            st.caption('Locate ' + doc_id + ' in the consolidated annexures.')
         else:
             st.link_button('Open source document', source_url(doc_id), type='primary')
         for number, entry in enumerate(doc['entries'], 1):
