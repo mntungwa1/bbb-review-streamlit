@@ -9,7 +9,8 @@ import streamlit as st
 import portal_client
 
 # Streamlit can rerun app.py while retaining imports from the previous release.
-if '/api/tool-annexures' not in getattr(portal_client, 'ALLOWED_PATHS', ()):
+required_paths = {'/api/tool-annexures', '/api/main-framework'}
+if not required_paths.issubset(getattr(portal_client, 'ALLOWED_PATHS', ())):
     importlib.reload(portal_client)
 
 from portal_client import PortalClient, PortalError, DEFAULT_URL, empty_batch, new_entry, has_content, submission_issues, review_csv
@@ -60,6 +61,26 @@ def client():
         # Keep the authenticated HTTP session when replacing a pre-deploy client.
         connection.__class__ = PortalClient
     return connection
+
+def review_form(document, key='single_review'):
+    with st.form(key, clear_on_submit=True):
+        a, b = st.columns(2)
+        reviewer = a.text_input('Full name', max_chars=200)
+        email = b.text_input('Email', value=st.session_state.get('reviewer_email', ''), max_chars=254)
+        organization = st.text_input('Organisation', max_chars=300)
+        location = st.text_input('Document version, page / clause / section', max_chars=500)
+        comment = st.text_area('Review comment', max_chars=10000)
+        recommendation = st.text_area('Recommended change / proposed wording', max_chars=10000)
+        send = st.form_submit_button('Submit review', type='primary')
+    if send:
+        st.session_state['selected_review_document'] = document
+        try:
+            client().call('POST', '/api/reviews', dict(reviewer=reviewer, email=email.strip(), organization=organization, document=document, location=location, comment=comment, recommendation=recommendation))
+            st.success('Your review was submitted successfully.')
+        except PortalError as exc:
+            show_error(exc)
+            st.code(json.dumps(dict(reviewer=reviewer, email=email, organization=organization, document=document, location=location, comment=comment, recommendation=recommendation), indent=2), language='json')
+
 
 def download_tool_annexures():
     try:
@@ -218,9 +239,24 @@ if page == 'Overview':
 elif page == 'Main Framework':
     st.title('BBB Engineering Framework')
     st.write('Review the engineering standard, its governance arrangements and implementation provisions. Reference the document version, page and clause in your comments.')
-    st.link_button('Open Main Framework', DOCS['frameworkUrl'], type='primary')
+    st.link_button('Open Main Framework in Google Drive', DOCS['frameworkUrl'])
     st.link_button('Open supporting National Technical Standard', DOCS['supportUrl'])
-    st.caption('Use Submit a review or Review batch in the sidebar to record your comments.')
+    preview, review = st.columns([3, 2], gap='large')
+    with preview:
+        st.subheader('Framework preview')
+        try:
+            document = client().call('GET', '/api/main-framework')
+            pdf = base64.b64decode(document['content'], validate=True)
+            if not pdf.startswith(b'%PDF-'):
+                raise ValueError('Invalid Framework PDF')
+            st.pdf(pdf, height=760, key='main_framework_pdf', alt='Main Framework PDF preview')
+        except PortalError as exc:
+            show_error(exc)
+        except (KeyError, TypeError, ValueError):
+            st.error('The Main Framework preview could not be loaded. Please try refreshing the page.')
+    with review:
+        st.subheader('Review the Main Framework')
+        review_form('Main Framework', key='main_framework_review')
 
 elif page == '21 Tools':
     st.title('All 21 compliance tools')
@@ -253,23 +289,7 @@ elif page == 'Submit a review':
     document = st.selectbox('Document', DOCUMENT_IDS,
                             format_func=lambda d: f'{d} · {title(d)}', key='review_document')
     st.session_state['selected_review_document'] = document
-    with st.form('single_review', clear_on_submit=True):
-        a, b = st.columns(2)
-        reviewer = a.text_input('Full name', max_chars=200)
-        email = b.text_input('Email', value=st.session_state.get('reviewer_email', ''), max_chars=254)
-        organization = st.text_input('Organisation', max_chars=300)
-        location = st.text_input('Document version, page / clause / section', max_chars=500)
-        comment = st.text_area('Review comment', max_chars=10000)
-        recommendation = st.text_area('Recommended change / proposed wording', max_chars=10000)
-        send = st.form_submit_button('Submit review', type='primary')
-    if send:
-        st.session_state['selected_review_document'] = document
-        try:
-            client().call('POST', '/api/reviews', dict(reviewer=reviewer, email=email.strip(), organization=organization, document=document, location=location, comment=comment, recommendation=recommendation))
-            st.success('Your review was submitted successfully.')
-        except PortalError as exc:
-            show_error(exc)
-            st.code(json.dumps(dict(reviewer=reviewer, email=email, organization=organization, document=document, location=location, comment=comment, recommendation=recommendation), indent=2), language='json')
+    review_form(document)
 
 elif page == 'Review batch':
     st.title('Review documents, submit once')
