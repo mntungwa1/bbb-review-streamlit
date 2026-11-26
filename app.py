@@ -185,8 +185,8 @@ elif page == 'Main Framework':
 
 elif page == '21 Tools':
     st.title('All 21 compliance tools')
-    st.write('The tools are contained in the consolidated compliance annexures. Locate each BBB reference in that source document.')
-    st.link_button('Open consolidated annexures', DOCS['annexureUrl'], type='primary')
+    st.write('Open the annexures once for all 21 tools. Keep the document open while you switch between BBB references in this tab.')
+    st.link_button('Open all 21 tools in Google Drive', DOCS['annexureUrl'], type='primary')
     selected = st.session_state.get('selected_review_document')
     st.selectbox('Tool to review', list(TOOLS),
                  index=list(TOOLS).index(selected) if selected in TOOLS else 0,
@@ -196,7 +196,6 @@ elif page == '21 Tools':
               args=(st.session_state['tool_to_review'], True), type='primary')
     for doc, name in TOOLS.items():
         with st.expander(f'{doc} · {name}'):
-            st.link_button(f'Open annexures for {doc}', DOCS['annexureUrl'], key='open_' + doc)
             st.button(f'Review {doc}', key='review_' + doc,
                       on_click=select_review_document, args=(doc, True))
 
@@ -298,9 +297,11 @@ elif page == 'Review batch':
         doc_index = DOCUMENT_IDS.index(doc_id)
         doc = payload['documents'][doc_index]
         st.subheader(title(doc_id))
-        st.link_button('Open source document', source_url(doc_id), type='primary')
         if doc_id in TOOLS:
-            st.caption('Locate ' + doc_id + ' in the consolidated annexures.')
+            st.link_button('Open all 21 tools in Google Drive', source_url(doc_id), type='primary')
+            st.caption('If the annexures are already open, use that tab to find ' + doc_id + '.')
+        else:
+            st.link_button('Open source document', source_url(doc_id), type='primary')
         for number, entry in enumerate(doc['entries'], 1):
             with st.container(border=True):
                 st.markdown(f'**Comment {number}**')
