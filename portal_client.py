@@ -22,7 +22,7 @@ class PortalClient:
             self.session.headers['OAI-Sites-Authorization'] = 'Bearer ' + api_token
 
     def call(self, method, path, data=None):
-        if path not in {'/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch'}:
+        if path not in {'/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch', '/api/tool-annexures'}:
             raise PortalError('Unknown portal operation.')
         try:
             response = self.session.request(method, self.base_url + path, json=data, timeout=(15, 45), allow_redirects=False)
