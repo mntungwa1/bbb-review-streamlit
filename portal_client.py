@@ -6,6 +6,11 @@ import requests
 
 DEFAULT_URL = 'https://bbb-review-portal-2026.dingaan-mahl-3739.chatgpt.site'
 
+ALLOWED_PATHS = frozenset({
+    '/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch', '/api/tool-annexures',
+})
+
+
 class PortalError(Exception):
     def __init__(self, message, status=0):
         super().__init__(message)
@@ -22,7 +27,7 @@ class PortalClient:
             self.session.headers['OAI-Sites-Authorization'] = 'Bearer ' + api_token
 
     def call(self, method, path, data=None):
-        if path not in {'/api/session', '/api/reviews', '/api/reviewers', '/api/review-batch', '/api/tool-annexures'}:
+        if path not in ALLOWED_PATHS:
             raise PortalError('Unknown portal operation.')
         try:
             response = self.session.request(method, self.base_url + path, json=data, timeout=(15, 45), allow_redirects=False)
