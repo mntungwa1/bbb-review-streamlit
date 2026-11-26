@@ -1,8 +1,17 @@
 """BBB Review Portal: Streamlit interface sharing the existing authenticated service."""
 import base64
+import importlib
 import json
 import re
+
 import streamlit as st
+
+import portal_client
+
+# Streamlit can rerun app.py while retaining imports from the previous release.
+if '/api/tool-annexures' not in getattr(portal_client, 'ALLOWED_PATHS', ()):
+    importlib.reload(portal_client)
+
 from portal_client import PortalClient, PortalError, DEFAULT_URL, empty_batch, new_entry, has_content, submission_issues, review_csv
 
 st.set_page_config(page_title='Build Back Better Review Portal', page_icon='🏛️', layout='wide')
@@ -46,7 +55,11 @@ def show_error(exc):
         st.info('The portal service denied this action. Check the administrator permissions in the portal service.')
 
 def client():
-    return st.session_state['portal_client']
+    connection = st.session_state['portal_client']
+    if type(connection).__module__ == portal_client.__name__ and type(connection) is not PortalClient:
+        # Keep the authenticated HTTP session when replacing a pre-deploy client.
+        connection.__class__ = PortalClient
+    return connection
 
 def download_tool_annexures():
     try:
